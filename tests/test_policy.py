@@ -19,6 +19,7 @@ from app.schemas import (
 @pytest.fixture
 def policy_engine() -> PolicyEngine:
     settings = Settings(
+        _env_file=None,
         risk_threshold_block=0.70,
         risk_threshold_quarantine=0.35,
         fail_closed_on_error=True,
@@ -159,6 +160,7 @@ def test_policy_inference_failure_with_high_rules_blocks(policy_engine: PolicyEn
 def test_policy_configurable_permissive_fallback():
     """Test explicit permissive mode toggle when fail_closed_on_error is False."""
     permissive_settings = Settings(
+        _env_file=None,
         fail_closed_on_error=False,
     )
     engine = PolicyEngine(settings=permissive_settings)

@@ -128,6 +128,20 @@ def test_inference_malformed_json_response_handled():
         assert res.decision == Decision.QUARANTINE
 
 
+def test_inference_connection_refused_error_handled():
+    """Verify that connection failure (e.g. unreachable endpoint) raises model_error and quarantines."""
+    settings = Settings(veyra_demo_mode=False, fail_closed_on_error=True)
+    client = OllamaClient(base_url="http://127.0.0.1:59999", demo_mode=False)
+
+    detector = PromptDetector(client=client, settings=settings)
+    res = detector.analyze("Test prompt against offline local endpoint")
+
+    assert res.analysis_status == AnalysisStatus.MODEL_ERROR
+    assert res.inference_mode == InferenceMode.REAL
+    assert res.decision == Decision.QUARANTINE
+    assert "conservative quarantine" in res.explanation.lower() or "model_error" in res.explanation.lower()
+
+
 def test_real_inference_success_with_mocked_network():
     """Test real inference mode parsing valid Ollama response."""
     settings = Settings(veyra_demo_mode=False)
@@ -156,6 +170,25 @@ def test_real_inference_success_with_mocked_network():
         assert res.analysis_status == AnalysisStatus.SUCCESS
         assert res.decision == Decision.BLOCK
         assert res.category == AttackCategory.INSTRUCTION_OVERRIDE
+
+
+def test_real_inference_live_endpoint():
+    """Verify live open-weight model inference when a valid provider API key is present."""
+    settings = Settings(veyra_demo_mode=False)
+    if not settings.ollama_api_key or "localhost" in settings.ollama_base_url:
+        pytest.skip("Skipping live cloud inference test: no remote API key or endpoint configured.")
+
+    client = OllamaClient(demo_mode=False)
+    detector = PromptDetector(client=client, settings=settings)
+
+    # Harmless benign query
+    res = detector.analyze("What is the speed of light in vacuum?")
+    assert res.inference_mode == InferenceMode.REAL
+    assert res.analysis_status == AnalysisStatus.SUCCESS
+    assert res.decision == Decision.ALLOW
+    assert res.category == AttackCategory.BENIGN
+    assert res.risk_score < 0.35
+    assert len(res.explanation) > 0
 
 
 def test_dataset_evaluation_metrics(demo_detector: PromptDetector):

@@ -104,7 +104,10 @@ class OllamaClient:
         demo_mode: Optional[bool] = None,
     ):
         settings: Settings = get_settings()
-        self.base_url = (base_url or settings.ollama_base_url).rstrip("/")
+        raw_base = (base_url or settings.ollama_base_url).strip().rstrip("/")
+        if raw_base.endswith("/api"):
+            raw_base = raw_base[:-4]
+        self.base_url = raw_base
         self.model = model or settings.ollama_model
         self.api_key = api_key if api_key is not None else settings.ollama_api_key
         self.timeout_seconds = timeout_seconds if timeout_seconds is not None else settings.ollama_timeout_seconds
