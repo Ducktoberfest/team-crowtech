@@ -90,6 +90,23 @@ def test_api_info_endpoint(client: TestClient):
     assert data["limits"]["max_prompt_length"] > 0
 
 
+def test_serve_dashboard_and_static_assets(client: TestClient):
+    """Verify that root endpoint serves the cybersecurity dashboard HTML and static assets."""
+    # Test GET /
+    resp_root = client.get("/")
+    assert resp_root.status_code == 200
+    assert "Veyra" in resp_root.text
+    assert "<!DOCTYPE html>" in resp_root.text
+
+    # Test static assets
+    resp_js = client.get("/static/app.js")
+    assert resp_js.status_code == 200
+    assert "Veyra AI Security Engine" in resp_js.text
+
+    resp_css = client.get("/static/styles.css")
+    assert resp_css.status_code == 200
+
+
 # ------------------------------------------------------------------------------
 # 2. Analyze Prompt Endpoint (Mocked Detector)
 # ------------------------------------------------------------------------------
@@ -201,6 +218,29 @@ def test_analyze_safe_error_handling(client: TestClient):
         assert "secret123" not in data["detail"]
         assert "RuntimeError" not in data["detail"]
         assert "An error occurred during security pipeline processing" in data["detail"]
+
+
+def test_real_inference_failure_preserves_real_mode_in_api(client: TestClient):
+    """Verify that when real model inference fails, the API returns inference_mode='real' and QUARANTINE."""
+    fail_result = PromptAnalysisResult(
+        category=AttackCategory.UNCERTAIN,
+        risk_score=0.50,
+        confidence=0.40,
+        explanation="Inference failure (timeout). Untrusted input routed to conservative quarantine.",
+        evidence=["Inference pipeline status: timeout"],
+        recommended_action=Decision.QUARANTINE,
+        analysis_status=AnalysisStatus.TIMEOUT,
+        inference_mode=InferenceMode.REAL,
+        decision=Decision.QUARANTINE,
+        pipeline_latency_ms=15000.0,
+    )
+    with patch("app.routes.analyze_prompt", return_value=fail_result):
+        resp = client.post("/api/analyze", json={"prompt": "Suspicious payload during backend timeout"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["result"]["inference_mode"] == "real"
+        assert data["result"]["analysis_status"] == "timeout"
+        assert data["result"]["decision"] == "QUARANTINE"
 
 
 # ------------------------------------------------------------------------------
