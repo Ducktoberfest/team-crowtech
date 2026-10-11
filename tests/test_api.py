@@ -63,15 +63,26 @@ def test_health_endpoint(client: TestClient):
     data = response.json()
 
     assert data["status"] in ("healthy", "degraded")
+    assert data["application"] == "available"
     assert "timestamp" in data
     assert data["database"] == "connected"
     assert "model_configured" in data
     assert "version" in data
+    assert data["docs"] == "/docs"
+    assert data["inference"]["checked"] is False
+    assert data["inference"]["status"] in (
+        "configured",
+        "demo_mode",
+        "not_configured",
+        "misconfigured",
+    )
 
     # Verify no credential leaks
+    serialized = response.text.lower()
     assert "api_key" not in data
-    assert "password" not in data
-    assert "secret" not in data
+    assert "password" not in serialized
+    assert "secret" not in serialized
+    assert "bearer" not in serialized
 
 
 def test_api_info_endpoint(client: TestClient):
@@ -558,24 +569,53 @@ def test_samples_benchmark_endpoint(client: TestClient):
 # 8. Vercel Serverless Runtime & Startup Resilience
 # ------------------------------------------------------------------------------
 
-def test_vercel_entrypoint_and_favicon():
-    """Verify that api/index.py exports FastAPI app and responds to root and favicon requests."""
-    from api.index import app as vercel_app
-    test_client = TestClient(vercel_app)
+def test_vercel_json_does_not_rewrite_paths_away_from_fastapi():
+    """Catch-all rewrites to /api/index.py hide every FastAPI route behind 404s on Vercel."""
+    import json
+    from pathlib import Path
 
-    # 1. Root dashboard route
+    config = json.loads(Path("vercel.json").read_text(encoding="utf-8"))
+    assert "rewrites" not in config
+    assert "routes" not in config
+    assert "app/main.py" in config.get("functions", {})
+
+
+def test_canonical_entrypoint_routes_docs_and_openapi():
+    """Verify app.main:app is the canonical FastAPI instance with docs and analysis routes."""
+    from app.main import app as canonical_app
+
+    paths = {getattr(route, "path", None) for route in canonical_app.routes}
+    assert "/" in paths
+    assert "/health" in paths
+    assert "/openapi.json" in paths
+    assert "/docs" in paths
+    assert "/api/analyze" in paths
+    assert "/api/agent/simulate" in paths
+    assert "/api/index.py" not in paths
+
+    test_client = TestClient(canonical_app)
+
     resp_root = test_client.get("/")
     assert resp_root.status_code == 200
     assert "Veyra" in resp_root.text
 
-    # 2. Favicon route
     resp_fav = test_client.get("/favicon.ico")
     assert resp_fav.status_code == 204
 
-    # 3. Health check route
     resp_health = test_client.get("/health")
     assert resp_health.status_code == 200
     assert resp_health.json()["status"] in ("healthy", "degraded")
+
+    resp_openapi = test_client.get("/openapi.json")
+    assert resp_openapi.status_code == 200
+    schema = resp_openapi.json()
+    assert schema["info"]["title"] == "Veyra AI Security Engine"
+    assert "/health" in schema["paths"]
+    assert "/api/analyze" in schema["paths"]
+    assert "post" in schema["paths"]["/api/analyze"]
+
+    resp_docs = test_client.get("/docs")
+    assert resp_docs.status_code == 200
 
 
 def test_startup_lifespan_resilient_on_readonly_filesystem():

@@ -119,7 +119,7 @@ class DownstreamSimulateResponse(BaseModel):
     tags=["System"],
 )
 def health_check() -> Dict[str, Any]:
-    """Returns application health status, timestamp, and configured model."""
+    """Report process and persistence health without probing the inference provider."""
     settings = get_settings()
     db_healthy = True
     try:
@@ -127,13 +127,57 @@ def health_check() -> Dict[str, Any]:
     except Exception:
         db_healthy = False
 
+    base_url = (settings.ollama_base_url or "").strip().lower()
+    local_inference = "localhost" in base_url or "127.0.0.1" in base_url
+    production = bool(
+        os.environ.get("VERCEL")
+        or os.environ.get("VERCEL_ENV")
+        or os.environ.get("ENVIRONMENT", "").lower() == "production"
+    )
+
+    if settings.veyra_demo_mode:
+        inference = {
+            "status": "demo_mode",
+            "checked": False,
+            "model": settings.ollama_model,
+            "detail": "Demo mode is enabled; live inference is not required for this process.",
+        }
+    elif not base_url:
+        inference = {
+            "status": "not_configured",
+            "checked": False,
+            "model": settings.ollama_model,
+            "detail": "OLLAMA_BASE_URL is not set.",
+        }
+    elif production and local_inference:
+        inference = {
+            "status": "misconfigured",
+            "checked": False,
+            "model": settings.ollama_model,
+            "detail": "Inference URL points at a development-only host. Set OLLAMA_BASE_URL to a remote endpoint.",
+        }
+    else:
+        inference = {
+            "status": "configured",
+            "checked": False,
+            "model": settings.ollama_model,
+            "detail": "An inference endpoint is configured. This health check does not call the provider.",
+        }
+
+    overall = "healthy"
+    if not db_healthy or inference["status"] in ("not_configured", "misconfigured"):
+        overall = "degraded"
+
     return {
-        "status": "healthy" if db_healthy else "degraded",
+        "status": overall,
+        "application": "available",
         "timestamp": time.time(),
         "database": "connected" if db_healthy else "disconnected",
+        "inference": inference,
         "model_configured": settings.ollama_model,
         "demo_mode": settings.veyra_demo_mode,
         "version": "1.0.0",
+        "docs": "/docs",
     }
 
 
