@@ -8,7 +8,7 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Hackathon](https://img.shields.io/badge/MLH-Ducktoberfest-FF6B6B)](https://mlh.io/)
-[![Deployment](https://img.shields.io/badge/Deployment-DigitalOcean%20App%20Platform-0080FF?logo=digitalocean&logoColor=white)](https://cloud.digitalocean.com/apps)
+[![Deployment](https://img.shields.io/badge/Deployment-Vercel-000000?logo=vercel&logoColor=white)](https://vercel.com/)
 
 *Defend downstream LLMs, customer support bots, and autonomous tool-calling agents from adversarial prompt injections, jailbreaks, and unauthorized privilege escalation.*
 
