@@ -157,7 +157,7 @@ Copy `.env.example` to `.env` and adjust the variables as required:
 | Variable | Default | Purpose |
 | :--- | :--- | :--- |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Base URL for the Ollama inference host |
-| `OLLAMA_MODEL` | `gemma2:9b` | Target open-weight model name |
+| `OLLAMA_MODEL` | `gemma4:31b` | Target open-weight model name |
 | `OLLAMA_API_KEY` | *(None)* | Bearer authentication token if using a remote/hosted endpoint |
 | `OLLAMA_TIMEOUT_SECONDS` | `15.0` | Timeout threshold for model inference |
 | `VEYRA_DEMO_MODE` | `false` | Enable deterministic offline mock mode for testing/demo without an active GPU |
