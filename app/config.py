@@ -5,6 +5,7 @@ Manages environment variables, inference endpoints, model settings, and security
 Designed for local development and DigitalOcean production deployments.
 """
 
+import os
 from typing import Optional
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -38,14 +39,14 @@ class Settings(BaseSettings):
         description="Bearer token or API key for authenticated Ollama Cloud or remote inference."
     )
     ollama_model: str = Field(
-        default="gemma2:9b",
+        default="gemma4:31b" if os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV") else "gemma2:9b",
         alias="OLLAMA_MODEL",
-        description="Target open-weight model name (default: gemma2:9b)."
+        description="Target open-weight model name (default: gemma4:31b on Cloud, gemma2:9b local)."
     )
     ollama_base_url: str = Field(
-        default="http://localhost:11434",
+        default="https://ollama.com" if os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV") else "http://localhost:11434",
         alias="OLLAMA_BASE_URL",
-        description="Inference provider base URL (e.g. http://localhost:11434 or DigitalOcean private IP/cloud endpoint)."
+        description="Inference provider base URL (e.g. https://ollama.com for Cloud, or http://localhost:11434 for local Droplet)."
     )
     ollama_timeout_seconds: float = Field(
         default=15.0,

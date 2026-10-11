@@ -7,7 +7,7 @@ dashboard, database initialization, and routing.
 
 import os
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -20,7 +20,11 @@ from app.routes import router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan context: initialize database and verify configuration."""
-    init_db()
+    try:
+        init_db()
+    except Exception as exc:
+        import logging
+        logging.getLogger("veyra.startup").warning(f"Database initialization deferred during startup: {exc}")
     yield
 
 
@@ -71,6 +75,12 @@ async def serve_dashboard():
         "docs": "/docs",
         "health": "/health",
     }
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    """Return empty 204 for favicon to prevent unnecessary 404 or invocation overhead."""
+    return Response(status_code=204)
 
 
 if __name__ == "__main__":

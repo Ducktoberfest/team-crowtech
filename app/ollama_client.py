@@ -8,9 +8,20 @@ and an explicit, unmasked mock/demo mode for offline evaluation.
 """
 
 import json
+import os
 import re
 from typing import Optional, Tuple
 import httpx
+
+
+def _is_production_environment() -> bool:
+    """Check if runtime is a production environment such as Vercel."""
+    return bool(
+        os.environ.get("VERCEL")
+        or os.environ.get("VERCEL_ENV")
+        or os.environ.get("ENVIRONMENT", "").lower() == "production"
+        or os.environ.get("ENV", "").lower() == "production"
+    )
 
 from app.config import Settings, get_settings
 from app.schemas import (
@@ -136,6 +147,13 @@ class OllamaClient:
 
     def _call_real_inference(self, prompt: str) -> Tuple[AIModelAnalysis, InferenceMode, AnalysisStatus]:
         """Execute real HTTP API call to Ollama / compatible inference endpoint."""
+        # Guard: In production environments, never attempt to connect to localhost or development-only service
+        if _is_production_environment() and ("localhost" in self.base_url.lower() or "127.0.0.1" in self.base_url):
+            raise InferenceConnectionError(
+                f"Inference client cannot connect to localhost or development-only service ({self.base_url}) in production. "
+                "Please configure OLLAMA_BASE_URL with a valid remote inference service (e.g. https://ollama.com)."
+            )
+
         url = f"{self.base_url}/api/chat"
         headers = {"Content-Type": "application/json"}
         if self.api_key:

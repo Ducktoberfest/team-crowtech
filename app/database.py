@@ -29,7 +29,23 @@ from app.schemas import (
     PromptAnalysisResult,
 )
 
-DEFAULT_DB_PATH = os.environ.get("DATABASE_PATH", os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "veyra.db"))
+def get_db_path() -> str:
+    """
+    Return configured SQLite database file path.
+    Prioritizes:
+    1. Explicit DATABASE_PATH environment variable if provided.
+    2. /tmp/veyra.db when running in serverless environments (Vercel, AWS Lambda)
+       where the deployment root (/var/task) is read-only.
+    3. ./data/veyra.db for local development and container deployments.
+    """
+    if os.environ.get("DATABASE_PATH"):
+        return os.environ["DATABASE_PATH"]
+    if os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+        return "/tmp/veyra.db"
+    return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "veyra.db")
+
+
+DEFAULT_DB_PATH = get_db_path()
 
 
 def _should_store_raw_prompts() -> bool:
@@ -37,26 +53,42 @@ def _should_store_raw_prompts() -> bool:
     return os.environ.get("STORE_RAW_PROMPTS", "false").strip().lower() in ("true", "1", "yes")
 
 
-def get_db_path() -> str:
-    """Return configured SQLite database file path."""
-    return os.environ.get("DATABASE_PATH", DEFAULT_DB_PATH)
-
-
 def get_connection(db_path: Optional[str] = None) -> sqlite3.Connection:
     """
     Open connection to SQLite database with foreign keys and Row factory enabled.
     Creates parent directories if necessary.
+    Falls back to /tmp/veyra.db or in-memory SQLite if target path is in a read-only filesystem.
     """
     target_path = db_path or get_db_path()
-    parent_dir = os.path.dirname(os.path.abspath(target_path))
-    if parent_dir and not os.path.exists(parent_dir):
-        os.makedirs(parent_dir, exist_ok=True)
 
-    conn = sqlite3.connect(target_path)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode = WAL;")
-    conn.execute("PRAGMA foreign_keys = ON;")
-    return conn
+    def _open_sqlite(path: str) -> sqlite3.Connection:
+        if path != ":memory:":
+            parent_dir = os.path.dirname(os.path.abspath(path))
+            if parent_dir and not os.path.exists(parent_dir):
+                os.makedirs(parent_dir, exist_ok=True)
+
+        conn = sqlite3.connect(path)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON;")
+        if path != ":memory:":
+            try:
+                conn.execute("PRAGMA journal_mode = WAL;")
+            except sqlite3.OperationalError:
+                pass
+        return conn
+
+    try:
+        return _open_sqlite(target_path)
+    except (OSError, sqlite3.OperationalError):
+        # Target path is not writable (e.g. read-only filesystem on Vercel). Fallback to /tmp or memory.
+        if target_path != "/tmp/veyra.db" and target_path != ":memory:":
+            try:
+                return _open_sqlite("/tmp/veyra.db")
+            except (OSError, sqlite3.OperationalError):
+                return _open_sqlite(":memory:")
+        elif target_path != ":memory:":
+            return _open_sqlite(":memory:")
+        raise
 
 
 def init_db(db_path: Optional[str] = None) -> None:

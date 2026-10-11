@@ -552,3 +552,93 @@ def test_samples_benchmark_endpoint(client: TestClient):
     assert "tool_abuse" in categories
     assert "indirect_injection" in categories
     assert "uncertain" in categories
+
+
+# ------------------------------------------------------------------------------
+# 8. Vercel Serverless Runtime & Startup Resilience
+# ------------------------------------------------------------------------------
+
+def test_vercel_entrypoint_and_favicon():
+    """Verify that api/index.py exports FastAPI app and responds to root and favicon requests."""
+    from api.index import app as vercel_app
+    test_client = TestClient(vercel_app)
+
+    # 1. Root dashboard route
+    resp_root = test_client.get("/")
+    assert resp_root.status_code == 200
+    assert "Veyra" in resp_root.text
+
+    # 2. Favicon route
+    resp_fav = test_client.get("/favicon.ico")
+    assert resp_fav.status_code == 204
+
+    # 3. Health check route
+    resp_health = test_client.get("/health")
+    assert resp_health.status_code == 200
+    assert resp_health.json()["status"] in ("healthy", "degraded")
+
+
+def test_startup_lifespan_resilient_on_readonly_filesystem():
+    """Verify that FastAPI lifespan startup never crashes even if the filesystem is completely read-only."""
+    from app.main import app as main_app
+
+    # Simulate read-only filesystem where os.makedirs raises PermissionError/OSError
+    with patch("os.makedirs", side_effect=PermissionError("Read-only file system")):
+        with TestClient(main_app) as test_client:
+            resp = test_client.get("/health")
+            assert resp.status_code == 200
+
+
+def test_get_db_path_detects_serverless_environment():
+    """Verify get_db_path returns /tmp/veyra.db in Vercel or AWS Lambda environments."""
+    from app.database import get_db_path
+
+    # Without VERCEL
+    old_env = os.environ.get("VERCEL")
+    old_db = os.environ.get("DATABASE_PATH")
+    os.environ.pop("DATABASE_PATH", None)
+
+    try:
+        os.environ["VERCEL"] = "1"
+        assert get_db_path() == "/tmp/veyra.db"
+
+        # Explicit DATABASE_PATH takes precedence if user provided it
+        os.environ["DATABASE_PATH"] = "/custom/path.db"
+        assert get_db_path() == "/custom/path.db"
+    finally:
+        if old_env:
+            os.environ["VERCEL"] = old_env
+        else:
+            os.environ.pop("VERCEL", None)
+        if old_db:
+            os.environ["DATABASE_PATH"] = old_db
+        else:
+            os.environ.pop("DATABASE_PATH", None)
+
+
+def test_inference_client_refuses_localhost_in_production():
+    """Verify inference client rejects localhost in production and triggers safe fail-closed quarantine."""
+    from app.detector import PromptDetector
+    from app.ollama_client import InferenceConnectionError, OllamaClient
+
+    old_vercel = os.environ.get("VERCEL")
+    try:
+        os.environ["VERCEL"] = "1"
+        client = OllamaClient(base_url="http://localhost:11434", demo_mode=False)
+
+        # Direct call raises InferenceConnectionError
+        with pytest.raises(InferenceConnectionError) as exc_info:
+            client.analyze("Test prompt in production")
+        assert "cannot connect to localhost" in str(exc_info.value)
+
+        # Detector safely catches and isolates to QUARANTINE under fail-closed posture
+        detector = PromptDetector(client=client)
+        res = detector.analyze("A subtle adversarial probe")
+        assert res.analysis_status == AnalysisStatus.MODEL_ERROR
+        assert res.decision == Decision.QUARANTINE
+    finally:
+        if old_vercel:
+            os.environ["VERCEL"] = old_vercel
+        else:
+            os.environ.pop("VERCEL", None)
+

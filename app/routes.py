@@ -29,8 +29,18 @@ from app.schemas import (
 
 router = APIRouter()
 
-MAX_PROMPT_LENGTH = int(os.environ.get("MAX_PROMPT_LENGTH", 32000))
-RATE_LIMIT_PER_MINUTE = int(os.environ.get("RATE_LIMIT_PER_MINUTE", 60))
+def _parse_int_env(key: str, default: int) -> int:
+    val = os.environ.get(key)
+    if val is not None:
+        try:
+            return int(val.strip())
+        except (ValueError, TypeError):
+            pass
+    return default
+
+
+MAX_PROMPT_LENGTH = _parse_int_env("MAX_PROMPT_LENGTH", 32000)
+RATE_LIMIT_PER_MINUTE = _parse_int_env("RATE_LIMIT_PER_MINUTE", 60)
 
 # Simple in-memory rate limiter per IP address
 _rate_limit_records: Dict[str, List[float]] = defaultdict(list)
@@ -175,7 +185,7 @@ def analyze_untrusted_prompt(payload: AnalyzePayload, request: Request) -> Analy
     stripped = payload.prompt.strip()
     if not stripped:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=422,
             detail="Prompt text must not be empty or contain only whitespace.",
         )
 
@@ -344,7 +354,7 @@ def simulate_downstream_assistant(payload: DownstreamSimulatePayload, request: R
     stripped = payload.prompt.strip()
     if not stripped:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=422,
             detail="Prompt text must not be empty.",
         )
 
